@@ -7,19 +7,9 @@ local function show_error(msg)
 end
 
 local function input_args(input)
-  if type(input) == "string" and vim.fn.filereadable(input) == 1 then
-    return input, nil
-  end
 
   if type(input) == "number" and vim.api.nvim_buf_is_valid(input) then
-    local modified = vim.bo[input].modified
-    local fname = vim.api.nvim_buf_get_name(input)
-
-    if (not modified) and fname ~= "" then
-      return fname, nil
-    else
-      return nil, vim.api.nvim_buf_get_lines(input, 0, -1, false)
-    end
+    return vim.api.nvim_buf_get_lines(input, 0, -1, false)
   end
 
   show_error("invalid input: " .. input)
@@ -32,10 +22,7 @@ local function run_query(cmd, input, query_buf, output_buf)
   local filter = table.concat(filter_lines, "\n")
   table.insert(cli_args, filter)
 
-  local input_filename, stdin = input_args(input)
-  if input_filename then
-    table.insert(cli_args, input_filename)
-  end
+  local stdin = input_args(input)
 
   local on_exit = function(result)
     vim.schedule(function()
@@ -101,7 +88,7 @@ local function virt_text_hint(buf, hint)
   })
 end
 
-function M.init_playground(in_filename, transform_filename, query_lang)
+function M.init_playground(in_filename, transform_filename, input_lang)
   local cfg = require('transforms.config').config
 
   if in_filename then
@@ -111,17 +98,25 @@ function M.init_playground(in_filename, transform_filename, query_lang)
   local curbuf = vim.api.nvim_get_current_buf()
   local match_args = in_filename and { filename = in_filename } or { buf = curbuf }
 
-  query_lang = query_lang or vim.filetype.match({ filename = transform_filename })
-
+  local query_lang = vim.filetype.match({ filename = transform_filename })
   cfg.output_window.filetype = vim.filetype.match(match_args)
-  cfg.cmd = { query_lang }
 
+  cfg.cmd = { query_lang }
   if query_lang == "sh" then
-    cfg.cmd = {}
+    cfg.cmd = { "bash", "-c" }
+  end
+
+  if input_lang then
+    vim.bo[curbuf].filetype = input_lang
+    cfg.output_window.filetype = input_lang
+  else
+    if query_lang == "jq" then
+      vim.bo[curbuf].filetype = "json"
+      cfg.output_window.filetype = "json"
+    end
   end
 
   cfg.query_window.filetype = query_lang
-
 
   -- Create output buffer first
   local output_buf, _ = create_split_buf(cfg.output_window)
@@ -129,16 +124,18 @@ function M.init_playground(in_filename, transform_filename, query_lang)
 
   -- And then query buffer
   local query_buf, _ = create_split_buf(cfg.query_window, function(new_buf)
-    if transform_filename then
-      vim.cmd('e ' .. transform_filename)
-    end
     vim.b[new_buf].transforms_inputbuf = curbuf
   end)
 
-  virt_text_hint(query_buf, "Run your query with <CR>.")
+  if transform_filename then
+    vim.cmd('e ' .. transform_filename)
+    query_buf = vim.api.nvim_get_current_buf()
+  else
+    virt_text_hint(query_buf, "Run your query with <CR>.")
+  end
 
   vim.keymap.set({ "n", "i" }, "<Plug>(TransformRun)", function()
-    run_query(cfg.cmd, in_filename or curbuf, query_buf, output_buf)
+    run_query(cfg.cmd, curbuf, query_buf, output_buf)
   end, {
     buffer = query_buf,
     silent = true,
@@ -154,3 +151,4 @@ function M.init_playground(in_filename, transform_filename, query_lang)
 end
 
 return M
+
