@@ -88,7 +88,7 @@ local function virt_text_hint(buf, hint)
   })
 end
 
-function M.init_playground(in_filename, transform_filename, input_lang)
+function M.init_playground(in_filename, transform_filename, opts)
   local cfg = require('transforms.config').config
 
   if in_filename then
@@ -101,22 +101,11 @@ function M.init_playground(in_filename, transform_filename, input_lang)
   local query_lang = vim.filetype.match({ filename = transform_filename })
   cfg.output_window.filetype = vim.filetype.match(match_args)
 
-  cfg.cmd = { query_lang }
-  if query_lang == "sh" then
-    cfg.cmd = { "bash", "-c" }
-  end
+  cfg.cmd = opts.command or { "bash", "-c" }
 
-  if input_lang then
-    vim.bo[curbuf].filetype = input_lang
-    cfg.output_window.filetype = input_lang
-  else
-    if query_lang == "jq" then
-      vim.bo[curbuf].filetype = "json"
-      cfg.output_window.filetype = "json"
-    end
-  end
-
-  cfg.query_window.filetype = query_lang
+  vim.bo[curbuf].filetype = opts.input_lang
+  cfg.output_window.filetype = opts.output_lang or opts.input_lang
+  cfg.query_window.filetype = opts.query_lang or query_lang
 
   -- Create output buffer first
   local output_buf, _ = create_split_buf(cfg.output_window)
@@ -134,6 +123,22 @@ function M.init_playground(in_filename, transform_filename, input_lang)
     virt_text_hint(query_buf, "Run your query with <CR>.")
   end
 
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    group = augroup,
+    buffer = query_buf,
+    callback = function()
+      run_query(cfg.cmd, curbuf, query_buf, output_buf)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    group = augroup,
+    buffer = curbuf,
+    callback = function()
+      run_query(cfg.cmd, curbuf, query_buf, output_buf)
+    end,
+  })
+
   vim.keymap.set({ "n", "i" }, "<Plug>(TransformRun)", function()
     run_query(cfg.cmd, curbuf, query_buf, output_buf)
   end, {
@@ -141,6 +146,7 @@ function M.init_playground(in_filename, transform_filename, input_lang)
     silent = true,
     desc = "Transform Run",
   })
+  run_query(cfg.cmd, curbuf, query_buf, output_buf)
 
   -- To have a sensible default. Does not require user to define one
   if not cfg.disable_default_keymap then
@@ -151,4 +157,3 @@ function M.init_playground(in_filename, transform_filename, input_lang)
 end
 
 return M
-
