@@ -91,15 +91,16 @@ end
 function M.init_playground(in_filename, transform_filename, opts)
   local cfg = require('transforms.config').config
 
-  if in_filename then
+  local curbuf = vim.api.nvim_get_current_buf()
+
+  if in_filename ~= vim.api.nvim_buf_get_name(curbuf) then
     vim.cmd('e ' .. in_filename)
   end
 
-  local curbuf = vim.api.nvim_get_current_buf()
   local match_args = in_filename and { filename = in_filename } or { buf = curbuf }
 
   local query_lang = vim.filetype.match({ filename = transform_filename })
-  cfg.output_window.filetype = vim.filetype.match(match_args)
+  opts.input_lang = opts.input_lang or vim.filetype.match(match_args)
 
   cfg.cmd = opts.command or { "bash", "-c" }
 
